@@ -32,6 +32,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db_test:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis_test:6379
+      LOG_DIRECTORY: logs
     depends_on:
       db_test:
         condition: service_healthy
