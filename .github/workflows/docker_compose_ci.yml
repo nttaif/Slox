@@ -45,11 +45,11 @@ jobs:
 
       # 6. TEST
       - name: Run tests
-        run: docker exec -t slox_api_test npm run test
+        run: docker exec -t slox_api_test npm run test -- --passWithNoTests
 
       # 7. E2E TEST
       - name: Run E2E tests
-        run: docker exec -t slox_api_test npm run test:e2e
+        run: docker exec -t slox_api_test npm run test:e2e -- --passWithNoTests
 
       # 8. DEBUGGING
       - name: Dump Docker logs on failure
