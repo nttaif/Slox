@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── TENANT ───────────────────────────────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  plan      Plan     @default(FREE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Google Calendar integration
+  gcalAccessToken   String?  // encrypted
+  gcalRefreshToken  String?  // encrypted
+  gcalCalendarId    String?
+  gcalSyncEnabled   Boolean  @default(false)
+  gcalSyncToken     String?  // used for incremental sync
+
+  // Settings
+  timezone            String  @default("Asia/Ho_Chi_Minh")
+  bookingLeadTime     Int     @default(24)  // hours before booking
+  maxAdvanceBooking   Int     @default(30)  // days ahead
+  cancelPolicyHours   Int     @default(2)   // hours before can cancel
+
+  // Relations
+  users         User[]
+  services      Service[]
+  staff         Staff[]
+  bookings      Booking[]
+  blockedSlots  BlockedSlot[]
+
+  @@map("tenants")
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+// ─── USER ─────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String
+  email        String
+  passwordHash String
+  role         Role     @default(MEMBER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, role])
+  @@map("users")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// ─── SERVICE ──────────────────────────────────────────────────────────
+
+model Service {
+  id          String  @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  duration    Int             // minutes, e.g. 60
+  bufferTime  Int     @default(0)  // minutes after slot
+  price       Decimal @db.Decimal(10, 0)
+  currency    String  @default("VND")
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  staffServices StaffService[]
+  bookings      Booking[]
+
+  @@index([tenantId, isActive])
+  @@map("services")
+}
+
+// ─── STAFF ────────────────────────────────────────────────────────────
+
+model Staff {
+  id       String  @id @default(uuid())
+  tenantId String
+  name     String
+  email    String?
+  avatar   String?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  staffServices StaffService[]
+  schedule      Schedule?
+  bookings      Booking[]
+  blockedSlots  BlockedSlot[]
+
+  @@index([tenantId, isActive])
+  @@map("staff")
+}
+
+// ─── STAFF_SERVICE (junction table) ───────────────────────────────────
+
+model StaffService {
+  staffId   String
+  serviceId String
+
+  staff   Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, serviceId])
+  @@map("staff_services")
+}
+
+// ─── SCHEDULE ─────────────────────────────────────────────────────────
+
+model Schedule {
+  id      String  @id @default(uuid())
+  staffId String  @unique      // 1 staff có 1 schedule rule
+  tenantId String
+
+  // Weekly hours lưu dạng JSONB
+  // Format: { monday: [{start: "09:00", end: "17:00"}], tuesday: [...], ... }
+  weeklyHours Json
+
+  // Ngày bắt đầu / kết thúc áp dụng rule này
+  effectiveFrom DateTime @default(now())
+  effectiveTo   DateTime?             // null = no end date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff      Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  exceptions ScheduleException[]
+
+  @@index([tenantId])
+  @@map("schedules")
+}
+
+// ─── SCHEDULE_EXCEPTION ───────────────────────────────────────────────
+
+model ScheduleException {
+  id         String        @id @default(uuid())
+  scheduleId String
+  date       DateTime      @db.Date   // chỉ lưu date, không có time
+  type       ExceptionType
+  customHours Json?        // chỉ dùng khi type = CUSTOM_HOURS
+  note       String?
+
+  schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, date])   // không được có 2 exception cùng ngày
+  @@map("schedule_exceptions")
+}
+
+enum ExceptionType {
+  DAY_OFF
+  CUSTOM_HOURS
+}
+
+// ─── BOOKING ──────────────────────────────────────────────────────────
+
+model Booking {
+  id        String        @id @default(uuid())
+  tenantId  String
+  serviceId String
+  staffId   String
+  startTime DateTime
+  endTime   DateTime
+
+  // Customer info — không cần account
+  customerName  String
+  customerEmail String
+  customerPhone String?
+  notes         String?
+
+  status                BookingStatus @default(PENDING_VERIFICATION)
+  cancelReason          String?
+  cancelToken           String        @unique @default(uuid())
+  verificationExpiredAt DateTime?     // dùng cho cleanup cron
+
+  // Google Calendar sync
+  gcalEventId String?
+
+  // BullMQ job IDs để có thể cancel khi booking bị hủy
+  reminder24hJobId String?
+  reminder1hJobId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+  staff   Staff   @relation(fields: [staffId], references: [id])
+
+  // Compound indexes cho các query phổ biến
+  @@index([tenantId, startTime])                   // query theo ngày
+  @@index([tenantId, staffId, startTime])          // conflict check
+  @@index([tenantId, status])                      // filter theo status
+  @@index([tenantId, customerEmail])               // lookup booking của khách
+  @@index([verificationExpiredAt])                 // cron cleanup
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  PENDING_VERIFICATION  // Chờ OTP xác nhận
+  CONFIRMED             // Đã xác nhận
+  CANCELLED             // Đã hủy
+  COMPLETED             // Hoàn thành
+  NO_SHOW               // Không đến
+  EXPIRED               // Hết hạn OTP
+}
+
+// ─── BLOCKED_SLOT ─────────────────────────────────────────────────────
+
+model BlockedSlot {
+  id          String      @id @default(uuid())
+  tenantId    String
+  staffId     String
+  startTime   DateTime
+  endTime     DateTime
+  source      BlockSource
+  gcalEventId String?     // để delete khi GCal event bị xóa
+  note        String?
+  createdAt   DateTime    @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  staff  Staff  @relation(fields: [staffId], references: [id])
+
+  @@index([tenantId, staffId, startTime])
+  @@index([gcalEventId])
+  @@map("blocked_slots")
+}
+
+enum BlockSource {
+  MANUAL
+  GOOGLE_CALENDAR
+}
