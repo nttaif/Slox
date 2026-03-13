@@ -1,7 +1,7 @@
 services:
   db_test:
-    image: postgres:14
-    container_name: postgres_test
+    image: postgres:16-alpine
+    container_name: slox_db_test
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -11,18 +11,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-  
+
+  redis_test:
+    image: redis:7-alpine
+    container_name: slox_redis_test
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   api_test:
     build:
       context: .
       target: development
-    container_name: hih_api_test
-    command: tail -f /dev/null 
+    container_name: slox_api_test
+    command: tail -f /dev/null
     environment:
-      - PORT=${PORT}
-      - NODE=${NODE_ENV}
+      NODE_ENV: test
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db_test:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis_test:6379
     depends_on:
       db_test:
+        condition: service_healthy
+      redis_test:
         condition: service_healthy
     volumes:
       - .:/usr/src/app

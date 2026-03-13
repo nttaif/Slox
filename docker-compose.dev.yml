@@ -1,13 +1,11 @@
 services:
   db:
-    image: postgres:14
-    # restart: always
-    container_name: postgres_dev
+    image: postgres:16-alpine
+    container_name: slox_db_dev
     env_file:
-      - .env.dev
-
+      - .env
     healthcheck:
-      test: ["CMD-SHELL"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -15,42 +13,31 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-  api:
-    build:
-      context: .
-      target: development
-    container_name: hih_api_dev
-    command: npm run start:dev
-    environment:
-      - PORT=${PORT}
-      - NODE_ENV=development
-    env_file:
-      - .env.dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: slox_redis_dev
     ports:
-      - "8080:8080"
-      - "9229:9229"
-    depends_on:
-      db:
-          condition: service_healthy
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-    profiles:
-      - dev
-  
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   pgadmin:
     image: dpage/pgadmin4
-    # restart: always
-    container_name: pgadmin_container
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    container_name: slox_pgadmin_dev
+    env_file:
+      - .env
     ports:
       - "5050:80"
     depends_on:
       - db
     volumes:
       - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin/pgpass:/pgpass:ro
 
 volumes:
   postgres_data:

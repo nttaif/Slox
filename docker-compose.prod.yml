@@ -1,7 +1,7 @@
 services:
-  db_prod:
-    image: postgres:14
-    container_name: postgres_prod
+  db:
+    image: postgres:16-alpine
+    container_name: slox_db_prod
     restart: always
     env_file:
       - .env.prod
@@ -12,18 +12,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-  
-  api_prod:
+
+  redis:
+    image: redis:7-alpine
+    container_name: slox_redis_prod
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
     build:
       context: .
       target: production
-    container_name: hih_api_prod
-    # restart: always
+    container_name: slox_api_prod
+    restart: always
     command: node dist/main
     env_file:
       - .env.prod
+    ports:
+      - "3000:3000"
     depends_on:
-      db_prod:
+      db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
