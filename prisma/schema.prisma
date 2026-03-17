@@ -7,102 +7,136 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── TENANT ───────────────────────────────────────────────────────────
-
-model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  plan      Plan     @default(FREE)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Google Calendar integration
-  gcalAccessToken   String?  // encrypted
-  gcalRefreshToken  String?  // encrypted
-  gcalCalendarId    String?
-  gcalSyncEnabled   Boolean  @default(false)
-  gcalSyncToken     String?  // used for incremental sync
-
-  // Settings
-  timezone            String  @default("Asia/Ho_Chi_Minh")
-  bookingLeadTime     Int     @default(24)  // hours before booking
-  maxAdvanceBooking   Int     @default(30)  // days ahead
-  cancelPolicyHours   Int     @default(2)   // hours before can cancel
-
-  // Relations
-  users         User[]
-  services      Service[]
-  staff         Staff[]
-  bookings      Booking[]
-  blockedSlots  BlockedSlot[]
-
-  @@map("tenants")
-}
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
 
 enum Plan {
   FREE
   PRO
 }
 
-// ─── USER ─────────────────────────────────────────────────────────────
-
-model User {
-  id           String   @id @default(uuid())
-  tenantId     String
-  email        String
-  passwordHash String
-  role         Role     @default(MEMBER)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([tenantId, email])
-  @@index([tenantId, role])
-  @@map("users")
-}
-
-enum Role {
+enum UserRole {
   OWNER
   ADMIN
   MEMBER
 }
 
-// ─── SERVICE ──────────────────────────────────────────────────────────
+enum BookingStatus {
+  PENDING_VERIFICATION
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  EXPIRED
+}
+
+enum BlockedSlotSource {
+  MANUAL
+  GOOGLE_CALENDAR
+}
+
+// ─── TENANT ───────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  plan      Plan     @default(FREE)
+  timezone  String   @default("Asia/Ho_Chi_Minh")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Google Calendar — stored encrypted via CryptoService (AES-256-GCM)
+  gcalAccessToken  String?
+  gcalRefreshToken String?
+  gcalCalendarId   String?
+  gcalSyncEnabled  Boolean @default(false)
+  gcalSyncToken    String?
+
+  // Soft delete
+  deletedAt DateTime?
+
+  // Relations
+  users        User[]
+  services     Service[]
+  staff        Staff[]
+  bookings     Booking[]
+  blockedSlots BlockedSlot[]
+  customers    Customer[]
+}
+
+// ─── USER ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid())
+  tenantId     String
+  email        String
+  passwordHash String    // bcrypt, cost factor >= 12
+  name         String
+  role         UserRole  @default(MEMBER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime? // soft delete
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, deletedAt])
+}
+
+// ─── CUSTOMER ─────────────────────────────────────────────────────────────────
+
+model Customer {
+  id        String    @id @default(uuid())
+  tenantId  String
+  name      String
+  email     String
+  phone     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId, email])
+  @@index([tenantId, deletedAt])
+}
+
+// ─── SERVICE ──────────────────────────────────────────────────────────────────
 
 model Service {
-  id          String  @id @default(uuid())
+  id          String    @id @default(uuid())
   tenantId    String
   name        String
   description String?
-  duration    Int             // minutes, e.g. 60
-  bufferTime  Int     @default(0)  // minutes after slot
-  price       Decimal @db.Decimal(10, 0)
-  currency    String  @default("VND")
-  isActive    Boolean @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  duration    Int       // minutes
+  bufferTime  Int       @default(0) // minutes after booking
+  price       Decimal?  @db.Decimal(10, 2)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime? // soft delete
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   staffServices StaffService[]
   bookings      Booking[]
 
   @@index([tenantId, isActive])
-  @@map("services")
+  @@index([tenantId, deletedAt])
 }
 
-// ─── STAFF ────────────────────────────────────────────────────────────
+// ─── STAFF ────────────────────────────────────────────────────────────────────
 
 model Staff {
-  id       String  @id @default(uuid())
-  tenantId String
-  name     String
-  email    String?
-  avatar   String?
-  isActive Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String    @id @default(uuid())
+  tenantId  String
+  name      String
+  email     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete — không xóa thật để giữ lịch sử booking
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   staffServices StaffService[]
@@ -110,11 +144,12 @@ model Staff {
   bookings      Booking[]
   blockedSlots  BlockedSlot[]
 
+  @@unique([tenantId, email])
   @@index([tenantId, isActive])
-  @@map("staff")
+  @@index([tenantId, deletedAt])
 }
 
-// ─── STAFF_SERVICE (junction table) ───────────────────────────────────
+// ─── STAFF SERVICE (junction) ─────────────────────────────────────────────────
 
 model StaffService {
   staffId   String
@@ -124,130 +159,99 @@ model StaffService {
   service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@id([staffId, serviceId])
-  @@map("staff_services")
 }
 
-// ─── SCHEDULE ─────────────────────────────────────────────────────────
+// ─── SCHEDULE ─────────────────────────────────────────────────────────────────
 
 model Schedule {
-  id      String  @id @default(uuid())
-  staffId String  @unique      // 1 staff có 1 schedule rule
-  tenantId String
-
-  // Weekly hours lưu dạng JSONB
-  // Format: { monday: [{start: "09:00", end: "17:00"}], tuesday: [...], ... }
+  id          String   @id @default(uuid())
+  staffId     String   @unique
+  // Format: { mon: [{start:"09:00", end:"17:00"}], tue: [], wed: [...], ... }
+  // Validated at application layer before saving
   weeklyHours Json
-
-  // Ngày bắt đầu / kết thúc áp dụng rule này
-  effectiveFrom DateTime @default(now())
-  effectiveTo   DateTime?             // null = no end date
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   staff      Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
   exceptions ScheduleException[]
-
-  @@index([tenantId])
-  @@map("schedules")
 }
 
-// ─── SCHEDULE_EXCEPTION ───────────────────────────────────────────────
+// ─── SCHEDULE EXCEPTION ───────────────────────────────────────────────────────
 
 model ScheduleException {
-  id         String        @id @default(uuid())
+  id         String   @id @default(uuid())
   scheduleId String
-  date       DateTime      @db.Date   // chỉ lưu date, không có time
-  type       ExceptionType
-  customHours Json?        // chỉ dùng khi type = CUSTOM_HOURS
+  date       DateTime @db.Date
+  // null = ngày nghỉ, [{start, end}] = giờ tùy chỉnh
+  hours      Json?
   note       String?
+  createdAt  DateTime @default(now())
 
   schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
-  @@unique([scheduleId, date])   // không được có 2 exception cùng ngày
-  @@map("schedule_exceptions")
+  @@unique([scheduleId, date])
+  @@index([scheduleId, date])
 }
 
-enum ExceptionType {
-  DAY_OFF
-  CUSTOM_HOURS
-}
-
-// ─── BOOKING ──────────────────────────────────────────────────────────
+// ─── BOOKING ──────────────────────────────────────────────────────────────────
 
 model Booking {
-  id        String        @id @default(uuid())
-  tenantId  String
-  serviceId String
-  staffId   String
-  startTime DateTime
-  endTime   DateTime
+  id         String        @id @default(uuid())
+  tenantId   String
+  serviceId  String
+  staffId    String
+  customerId String
+  status     BookingStatus @default(PENDING_VERIFICATION)
+  startTime  DateTime
+  endTime    DateTime
 
-  // Customer info — không cần account
-  customerName  String
-  customerEmail String
-  customerPhone String?
-  notes         String?
+  // Cancel token — expires after 30 days past appointment
+  cancelToken       String    @unique @default(uuid())
+  cancelTokenExpiry DateTime
 
-  status                BookingStatus @default(PENDING_VERIFICATION)
-  cancelReason          String?
-  cancelToken           String        @unique @default(uuid())
-  verificationExpiredAt DateTime?     // dùng cho cleanup cron
+  // Notes
+  notes String?
 
-  // Google Calendar sync
-  gcalEventId String?
+  // OTP — stored as bcrypt hash, nulled after verification
+  otpHash     String?
+  otpExpiry   DateTime?
+  otpAttempts Int       @default(0)
 
-  // BullMQ job IDs để có thể cancel khi booking bị hủy
+  // BullMQ job IDs for reminder cancellation
   reminder24hJobId String?
   reminder1hJobId  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant  Tenant  @relation(fields: [tenantId], references: [id])
-  service Service @relation(fields: [serviceId], references: [id])
-  staff   Staff   @relation(fields: [staffId], references: [id])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id])
+  staff    Staff    @relation(fields: [staffId], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id])
 
-  // Compound indexes cho các query phổ biến
-  @@index([tenantId, startTime])                   // query theo ngày
-  @@index([tenantId, staffId, startTime])          // conflict check
-  @@index([tenantId, status])                      // filter theo status
-  @@index([tenantId, customerEmail])               // lookup booking của khách
-  @@index([verificationExpiredAt])                 // cron cleanup
-  @@map("bookings")
+  @@index([tenantId, startTime])          // slot availability & conflict detection
+  @@index([tenantId, status])             // dashboard filter
+  @@index([staffId, startTime])           // per-staff conflict check
+  @@index([customerId])                   // customer booking history
+  @@index([cancelToken])                  // cancel via email link
 }
 
-enum BookingStatus {
-  PENDING_VERIFICATION  // Chờ OTP xác nhận
-  CONFIRMED             // Đã xác nhận
-  CANCELLED             // Đã hủy
-  COMPLETED             // Hoàn thành
-  NO_SHOW               // Không đến
-  EXPIRED               // Hết hạn OTP
-}
-
-// ─── BLOCKED_SLOT ─────────────────────────────────────────────────────
+// ─── BLOCKED SLOT ─────────────────────────────────────────────────────────────
 
 model BlockedSlot {
-  id          String      @id @default(uuid())
+  id          String            @id @default(uuid())
   tenantId    String
-  staffId     String
+  staffId     String?           // null = block toàn bộ business
   startTime   DateTime
   endTime     DateTime
-  source      BlockSource
-  gcalEventId String?     // để delete khi GCal event bị xóa
+  source      BlockedSlotSource @default(MANUAL)
+  gcalEventId String?
   note        String?
-  createdAt   DateTime    @default(now())
+  createdAt   DateTime          @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  staff  Staff  @relation(fields: [staffId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  staff  Staff? @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId, staffId, startTime])
-  @@index([gcalEventId])
-  @@map("blocked_slots")
-}
-
-enum BlockSource {
-  MANUAL
-  GOOGLE_CALENDAR
+  @@index([tenantId, startTime, endTime]) // blocked range check
+  @@index([staffId, startTime])           // per-staff blocked check
 }
