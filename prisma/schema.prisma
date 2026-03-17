@@ -37,13 +37,13 @@ enum BlockedSlotSource {
 // ─── TENANT ───────────────────────────────────────────────────────────────────
 
 model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  plan      Plan     @default(FREE)
-  timezone  String   @default("Asia/Ho_Chi_Minh")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(uuid())
+  name            String
+  slug            String   @unique
+  plan            Plan     @default(FREE)
+  timezone        String   @default("Asia/Ho_Chi_Minh")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   // Google Calendar — stored encrypted via CryptoService (AES-256-GCM)
   gcalAccessToken  String?
@@ -53,7 +53,7 @@ model Tenant {
   gcalSyncToken    String?
 
   // Soft delete
-  deletedAt DateTime?
+  deletedAt        DateTime?
 
   // Relations
   users        User[]
@@ -62,6 +62,8 @@ model Tenant {
   bookings     Booking[]
   blockedSlots BlockedSlot[]
   customers    Customer[]
+
+  @@map("tenants") // Map to PostgreSQL snake_case table name
 }
 
 // ─── USER ─────────────────────────────────────────────────────────────────────
@@ -81,6 +83,7 @@ model User {
 
   @@unique([tenantId, email])
   @@index([tenantId, deletedAt])
+  @@map("users")
 }
 
 // ─── CUSTOMER ─────────────────────────────────────────────────────────────────
@@ -101,6 +104,7 @@ model Customer {
   @@unique([tenantId, email])
   @@index([tenantId, email])
   @@index([tenantId, deletedAt])
+  @@map("customers")
 }
 
 // ─── SERVICE ──────────────────────────────────────────────────────────────────
@@ -124,6 +128,7 @@ model Service {
 
   @@index([tenantId, isActive])
   @@index([tenantId, deletedAt])
+  @@map("services")
 }
 
 // ─── STAFF ────────────────────────────────────────────────────────────────────
@@ -136,7 +141,7 @@ model Staff {
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // soft delete — không xóa thật để giữ lịch sử booking
+  deletedAt DateTime? // soft delete — do not hard delete to keep booking history
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   staffServices StaffService[]
@@ -147,6 +152,7 @@ model Staff {
   @@unique([tenantId, email])
   @@index([tenantId, isActive])
   @@index([tenantId, deletedAt])
+  @@map("staff")
 }
 
 // ─── STAFF SERVICE (junction) ─────────────────────────────────────────────────
@@ -159,6 +165,7 @@ model StaffService {
   service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@id([staffId, serviceId])
+  @@map("staff_services")
 }
 
 // ─── SCHEDULE ─────────────────────────────────────────────────────────────────
@@ -174,6 +181,8 @@ model Schedule {
 
   staff      Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
   exceptions ScheduleException[]
+
+  @@map("schedules")
 }
 
 // ─── SCHEDULE EXCEPTION ───────────────────────────────────────────────────────
@@ -182,7 +191,7 @@ model ScheduleException {
   id         String   @id @default(uuid())
   scheduleId String
   date       DateTime @db.Date
-  // null = ngày nghỉ, [{start, end}] = giờ tùy chỉnh
+  // null = rest day, [{start, end}] = custom hours
   hours      Json?
   note       String?
   createdAt  DateTime @default(now())
@@ -191,6 +200,7 @@ model ScheduleException {
 
   @@unique([scheduleId, date])
   @@index([scheduleId, date])
+  @@map("schedule_exceptions")
 }
 
 // ─── BOOKING ──────────────────────────────────────────────────────────────────
@@ -234,6 +244,8 @@ model Booking {
   @@index([staffId, startTime])           // per-staff conflict check
   @@index([customerId])                   // customer booking history
   @@index([cancelToken])                  // cancel via email link
+  
+  @@map("bookings")
 }
 
 // ─── BLOCKED SLOT ─────────────────────────────────────────────────────────────
@@ -241,7 +253,7 @@ model Booking {
 model BlockedSlot {
   id          String            @id @default(uuid())
   tenantId    String
-  staffId     String?           // null = block toàn bộ business
+  staffId     String?           // null = block entire business
   startTime   DateTime
   endTime     DateTime
   source      BlockedSlotSource @default(MANUAL)
@@ -250,8 +262,10 @@ model BlockedSlot {
   createdAt   DateTime          @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  staff  Staff? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  staff  Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, startTime, endTime]) // blocked range check
   @@index([staffId, startTime])           // per-staff blocked check
+  
+  @@map("blocked_slots")
 }
