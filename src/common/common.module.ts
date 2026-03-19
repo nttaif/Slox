@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
-import { PrismaService } from 'prisma/prisma.service';
-import { CryptoService } from './CryptoService';
+import { PrismaService } from 'src/common/prisma.service';
+import { CryptoService } from './crypto.service';
 import { WinstonLogger } from './config/winston.logger';
 
 @Global()

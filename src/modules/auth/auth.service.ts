@@ -10,10 +10,10 @@ import * as bcrypt from 'bcrypt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
-import { JwtConfig, JwtConfigName } from 'src/common/config/jwt.config';
-import { PrismaService } from 'prisma/prisma.service';
-import { WinstonLogger } from 'src/common/config/winston.logger';
-import { AuthKeyConfig, AuthKeyConfigName } from 'src/common/config/authkey.config';
+import { JwtConfig, JwtConfigName } from '../../common/config/jwt.config';
+import { PrismaService } from '../../common/prisma.service';
+import { WinstonLogger } from '../../common/config/winston.logger';
+import { AuthKeyConfig, AuthKeyConfigName } from '../../common/config/authkey.config';
 
 const BCRYPT_ROUNDS = 12;
 const DUMMY_HASH = '$2b$12$invalidhashfortimingattackprevention00000000000000000000';
