@@ -9,6 +9,7 @@ import { JwtConfig } from './common/config/jwt.config';
 import { WinstonLogger } from './common/config/winston.logger';
 import { HttpExceptionFilter } from './common/config/http-exception.filter';
 import { ResponseInterceptor } from './common/config/response.interceptor';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ResponseInterceptor } from './common/config/response.interceptor';
       envFilePath: getEnvFilePath(),
     }),
     CommonModule,
+    AuthModule
   ],
   providers: [
     {

@@ -3,11 +3,11 @@ import { registerAs } from '@nestjs/config';
 export const AuthKeyConfigName = 'authkey';
 
 export interface AuthKeyConfig {
-  publicKeyPath: string;
-  privateKeyPath: string;
+  publicKey: string;
+  privateKey: string;
 }
 
 export default registerAs(AuthKeyConfigName, () => ({
-  publicKeyPath: process.env.AUTH_PUBLIC_KEY_PATH,
-  privateKeyPath: process.env.AUTH_PRIVATE_KEY_PATH,
+  publicKey: process.env.AUTH_PUBLIC_KEY,
+  privateKey: process.env.AUTH_PRIVATE_KEY,
 }));
