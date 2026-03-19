@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
-import { WinstonLogger } from "src/config/winston.logger";
+import { WinstonLogger } from "src/common/config/winston.logger";
 
 @Injectable()
 export class PrismaService extends PrismaClient {

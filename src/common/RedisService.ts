@@ -1,8 +1,8 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
-import { RedisConfig, RedisConfigName } from 'src/config/redis.config';
-import { WinstonLogger } from 'src/config/winston.logger';
+import { RedisConfig, RedisConfigName } from './config/redis.config';
+import { WinstonLogger } from './config/winston.logger';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
@@ -18,10 +18,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
     this.client = new Redis(url, {
       maxRetriesPerRequest: 3,
-      lazyConnect: true, // không connect tự động — mình control
+      lazyConnect: true,
     });
 
-    // Lifecycle events
+
     this.client.on('connect', () =>
       this.logger.log('Redis connected', RedisService.name),
     );
@@ -82,11 +82,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─── SETNX — dùng cho slot locking ──────────────────────────────────────────
+  // ─── SETNX ──────────────────────────────────────────
 
   /**
-   * Atomic lock: chỉ set nếu key chưa tồn tại
-   * @returns true nếu acquire thành công, false nếu đã bị lock
+   * Atomic lock
+   * @returns true 
    */
   async setnx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
     try {
@@ -104,10 +104,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─── Increment — dùng cho OTP attempt counter ────────────────────────────────
+  // ─── Increment ────────────────────────────────
 
   /**
-   * @returns giá trị sau khi increment
+   * @returns
    */
   async incr(key: string): Promise<number> {
     try {
@@ -130,7 +130,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─── Expose raw client cho BullMQ ────────────────────────────────────────────
+  // ─── Expose raw client for BullMQ ────────────────────────────────────────────
 
   getClient(): Redis {
     return this.client;

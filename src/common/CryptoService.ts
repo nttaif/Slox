@@ -1,7 +1,7 @@
 import { Injectable, InternalServerErrorException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { WinstonLogger } from "src/config/winston.logger";
 import * as crypto from 'crypto';
+import { WinstonLogger } from "./config/winston.logger";
 @Injectable()
 export class CryptoService {
     private readonly algorithm = 'aes-256-gcm';
